@@ -29,10 +29,11 @@
             <artifactId>dropbox-core-sdk</artifactId>
             <version>3.1.4</version>
         </dependency>
+
         <dependency>
-            <groupId>com.github.eliux</groupId>
-            <artifactId>megacmd4j</artifactId>
-            <version>1.5.0</version>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20190722</version>
         </dependency>
 
         <dependency>

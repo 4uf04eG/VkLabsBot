@@ -1,13 +1,10 @@
-import com.petersamokhin.vksdk.core.client.VkApiClient
-import com.petersamokhin.vksdk.core.model.VkSettings
-import com.petersamokhin.vksdk.core.model.objects.keyboard
-import com.petersamokhin.vksdk.http.VkOkHttpClient
-
-
 fun main() {
-    val groupId = 197339206
-    val accessToken: String = System.getenv("ACCESS_TOKEN")
+    val groupId: Int = 197339206
+    val vkAccessToken: String = System.getenv("VK_ACCESS_TOKEN")
+    val dropboxAccessToken: String = System.getenv("DROPBOX_ACCESS_TOKEN")
 
-    val bot = LabsBot(groupId, accessToken)
+    val storage = CloudStorage(dropboxAccessToken)
+    val bot = LabsBot(groupId, vkAccessToken, storage)
+
     bot.startLongPolling()
 }
