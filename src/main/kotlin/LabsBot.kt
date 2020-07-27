@@ -1,3 +1,5 @@
+package main.kotlin
+
 import com.petersamokhin.vksdk.core.client.VkApiClient
 import com.petersamokhin.vksdk.core.http.paramsOf
 import com.petersamokhin.vksdk.core.io.FileOnDisk

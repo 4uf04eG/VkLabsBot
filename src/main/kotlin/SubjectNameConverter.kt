@@ -1,3 +1,5 @@
+package main.kotlin
+
 object SubjectNameConverter {
     fun convert(rawName: String): String {
         val names = mapOf(

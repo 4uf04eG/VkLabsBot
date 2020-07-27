@@ -1,3 +1,5 @@
+package main.kotlin
+
 fun main() {
     val groupId: Int = 197339206
     val vkAccessToken: String = System.getenv("VK_ACCESS_TOKEN")
