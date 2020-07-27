@@ -21,7 +21,15 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
 
         this.cloudStorage = cloudStorage
         client = VkApiClient(groupId, accessToken, VkApiClient.Type.Community, VkSettings(vkHttpClient))
+        requestYear()
+    }
 
+    fun startLongPolling() {
+        client.startLongPolling()
+    }
+
+    private fun requestYear(): Keyboard {
+        client.clearLongPollListeners()
         client.onMessage { messageEvent ->
             val id = messageEvent.message.peerId
 
@@ -46,23 +54,18 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                 else -> client.sendMessage {
                     peerId = id
                     message = "Неизвестная команда"
-                    keyboard = getDefaultButtons()
+                    keyboard = requestYear()
                 }.execute()
             }
         }
-    }
 
-    fun startLongPolling() {
-        client.startLongPolling()
-    }
-
-    private fun getDefaultButtons(): Keyboard {
         return keyboard(oneTime = true) {
             row { primaryButton("Первый курс") }
             row { primaryButton("Второй курс") }
             row { primaryButton("Третий курс") }
             row { primaryButton("Четвёртый курс") }
         }
+
     }
 
     private fun initStartMessageResponse(id: Int) {
@@ -73,7 +76,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     " раз раскидывать одни и те же ссылки.\n\n" +
                     "Гениальное решение - бот, который будет раздавать всё за меня.\n\n" +
                     "Для работы с ботом выберите учебный курс."
-            keyboard = getDefaultButtons()
+            keyboard = requestYear()
         }.execute()
     }
 
@@ -85,6 +88,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
             keyboard = keyboard {
                 row { primaryButton("Первый семестр") }
                 row { primaryButton("Второй семестр") }
+                row { primaryButton("Назад") }
             }
         }.execute()
 
@@ -97,6 +101,14 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                 "Второй семестр" -> {
                     semester= "Второй семестр"
                     requestListOfSubjects(id)
+                }
+                // Баг, когда колбэки для курсовов не устанавливаются
+                "Назад" -> {
+                    client.sendMessage {
+                        peerId = id
+                        message = "Выберите курс"
+                        keyboard = requestYear()
+                    }.execute()
                 }
             }
         }
@@ -112,6 +124,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
             message = "Выберите предмет"
             keyboard = keyboard {
                 converted.forEach{ row { primaryButton(label = it) } }
+                row { primaryButton("Назад") }
             }
         }.execute()
         client.onMessage{ messageEvent ->
@@ -119,6 +132,8 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                 val index = converted.indexOf(messageEvent.message.text)
                 subject = subjects[index]
                 requestAction(id)
+            } else if (messageEvent.message.text == "Назад") {
+                requestSemester(id)
             }
         }
     }
@@ -131,6 +146,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
             keyboard = keyboard {
                 row { primaryButton("Сгенерировать ссылку") }
                 row { primaryButton("Сгенерировать zip-архив") }
+                row { primaryButton("Назад") }
             }
         }.execute()
 
@@ -150,6 +166,9 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
 
                     cloudStorage.generateZipFile(year, semester, subject)
                     loadAndAttachZipFile(id, subject)
+                }
+                "Назад" -> {
+                    requestListOfSubjects(id)
                 }
             }
         }
@@ -180,7 +199,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
 
         client.sendMessage {
             peerId = id
-            message = "Вк не пропускает zip-файлы, так что замените zi на zip и будет вам счастье"
+            message = "Вк не пропускает zip-файлы. Замените zi на zip и будет вам счастье"
             attachment = attachmentStr
         }.execute()
     }
