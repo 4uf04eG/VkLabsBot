@@ -1,5 +1,3 @@
-package main.kotlin
-
 import com.petersamokhin.vksdk.core.client.VkApiClient
 import com.petersamokhin.vksdk.core.http.paramsOf
 import com.petersamokhin.vksdk.core.io.FileOnDisk
@@ -9,21 +7,48 @@ import com.petersamokhin.vksdk.core.model.objects.UploadableContent
 import com.petersamokhin.vksdk.core.model.objects.keyboard
 import com.petersamokhin.vksdk.http.VkOkHttpClient
 
-
 class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     private val client: VkApiClient
     private val cloudStorage: CloudStorage
 
-    private var year: String = ""
-    private var semester: String = ""
-    private var subject: String = ""
+    private var year: MutableMap<Int, String> = mutableMapOf()
+    private var semester: MutableMap<Int, String> = mutableMapOf()
+    private var subject: MutableMap<Int, String> = mutableMapOf()
 
     init {
         val vkHttpClient = VkOkHttpClient()
 
         this.cloudStorage = cloudStorage
         client = VkApiClient(groupId, accessToken, VkApiClient.Type.Community, VkSettings(vkHttpClient))
-        requestYear()
+
+        client.onMessage { messageEvent ->
+            val id = messageEvent.message.peerId
+
+            when (messageEvent.message.text) {
+                "Start" -> initStartMessageResponse(id)
+                "Первый курс" -> {
+                    year[id] = "Первый курс"
+                    requestSemester(id)
+                }
+                "Второй курс" -> {
+                    year[id] = "Второй курс"
+                    requestSemester(id)
+                }
+                "Третий курс" -> {
+                    year[id] = "Третий курс"
+                    requestSemester(id)
+                }
+                "Четвёртый курс" -> {
+                    year[id] = "Четвёртый курс"
+                    requestSemester(id)
+                }
+//                else -> client.sendMessage {
+//                    peerId = id
+//                    message = "Неизвестная команда"
+//                    keyboard = requestYear()
+//                }.execute()
+            }
+        }
     }
 
     fun startLongPolling() {
@@ -31,43 +56,12 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     }
 
     private fun requestYear(): Keyboard {
-        client.clearLongPollListeners()
-        client.onMessage { messageEvent ->
-            val id = messageEvent.message.peerId
-
-            when (messageEvent.message.text) {
-                "Start" -> initStartMessageResponse(id)
-                "Первый курс" -> {
-                    year = "Первый курс"
-                    requestSemester(id)
-                }
-                "Второй курс" -> {
-                    year = "Второй курс"
-                    requestSemester(id)
-                }
-                "Третий курс" -> {
-                    year = "Третий курс"
-                    requestSemester(id)
-                }
-                "Четвёртый курс" -> {
-                    year = "Четвёртый курс"
-                    requestSemester(id)
-                }
-                else -> client.sendMessage {
-                    peerId = id
-                    message = "Неизвестная команда"
-                    keyboard = requestYear()
-                }.execute()
-            }
-        }
-
         return keyboard(oneTime = true) {
             row { primaryButton("Первый курс") }
             row { primaryButton("Второй курс") }
             row { primaryButton("Третий курс") }
             row { primaryButton("Четвёртый курс") }
         }
-
     }
 
     private fun initStartMessageResponse(id: Int) {
@@ -83,7 +77,6 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     }
 
     private fun requestSemester(id: Int) {
-        client.clearLongPollListeners()
         client.sendMessage {
             peerId = id
             message = "Выберите семестр"
@@ -95,16 +88,17 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
         }.execute()
 
         client.onMessage { messageEvent ->
+            if (messageEvent.message.peerId != id) return@onMessage
+
             when (messageEvent.message.text) {
                 "Первый семестр" -> {
-                    semester = "Первый семестр"
+                    semester[id] = "Первый семестр"
                     requestListOfSubjects(id)
                 }
                 "Второй семестр" -> {
-                    semester= "Второй семестр"
+                    semester[id] = "Второй семестр"
                     requestListOfSubjects(id)
                 }
-                // Баг, когда колбэки для курсовов не устанавливаются
                 "Назад" -> {
                     client.sendMessage {
                         peerId = id
@@ -117,10 +111,11 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     }
 
     private fun requestListOfSubjects(id: Int) {
-        val subjects = cloudStorage.requestSubjectsList(year, semester)
+        val subjects = cloudStorage.requestSubjectsList(
+                year.getOrDefault(id, ""),
+                semester.getOrDefault(id, ""))
         val converted = subjects.map { SubjectNameConverter.convert(it) }
 
-        client.clearLongPollListeners()
         client.sendMessage {
             peerId = id
             message = "Выберите предмет"
@@ -129,10 +124,13 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                 row { primaryButton("Назад") }
             }
         }.execute()
+
         client.onMessage{ messageEvent ->
+            if (messageEvent.message.peerId != id) return@onMessage
+
             if (converted.contains(messageEvent.message.text)) {
                 val index = converted.indexOf(messageEvent.message.text)
-                subject = subjects[index]
+                subject[id] = subjects[index]
                 requestAction(id)
             } else if (messageEvent.message.text == "Назад") {
                 requestSemester(id)
@@ -141,7 +139,6 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     }
 
     private fun requestAction(id: Int) {
-        client.clearLongPollListeners()
         client.sendMessage {
             peerId = id
             message = "Выберите действие"
@@ -153,11 +150,16 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
         }.execute()
 
         client.onMessage { messageEvent ->
+            if (messageEvent.message.peerId != id) return@onMessage
+
             when (messageEvent.message.text) {
                 "Сгенерировать ссылку" -> {
                     client.sendMessage {
                         peerId = id
-                        message = "Ссылка на папку: ${cloudStorage.generateFolderLink(year, semester, subject)}"
+                        message = "Ссылка на папку: ${cloudStorage.generateFolderLink(
+                                year.getOrDefault(id, ""), 
+                                semester.getOrDefault(id, ""), 
+                                subject.getOrDefault(id, ""))}"
                     }.execute()
                 }
                 "Сгенерировать zip-архив" -> {
@@ -166,8 +168,11 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                         message = "Ожидайте загрузки файла"
                     }.execute()
 
-                    cloudStorage.generateZipFile(year, semester, subject)
-                    loadAndAttachZipFile(id, subject)
+                    cloudStorage.generateZipFile(
+                            year.getOrDefault(id, ""),
+                            semester.getOrDefault(id, ""),
+                            subject.getOrDefault(id, ""))
+                    loadAndAttachZipFile(id, subject.getOrDefault(id, ""))
                 }
                 "Назад" -> {
                     requestListOfSubjects(id)
