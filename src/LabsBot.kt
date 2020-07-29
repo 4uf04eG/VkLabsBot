@@ -1,5 +1,4 @@
 import com.petersamokhin.vksdk.core.client.VkApiClient
-import com.petersamokhin.vksdk.core.http.Parameters
 import com.petersamokhin.vksdk.core.http.paramsOf
 import com.petersamokhin.vksdk.core.io.FileOnDisk
 import com.petersamokhin.vksdk.core.model.VkSettings
