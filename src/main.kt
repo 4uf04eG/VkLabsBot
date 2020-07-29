@@ -5,7 +5,7 @@ class Main {
     companion object {
         @JvmStatic
         fun main(args: Array<String>) {
-            val groupId: Int = 197339206
+            val groupId = 197339206
             val vkAccessToken: String = System.getenv("VK_ACCESS_TOKEN")
             val dropboxAccessToken: String = System.getenv("DROPBOX_ACCESS_TOKEN")
 

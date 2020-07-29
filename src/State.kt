@@ -1,0 +1,7 @@
+enum class State {
+    YEAR_SELECTION,
+    SEMESTER_SELECTION,
+    SUBJECT_SELECTION,
+    ACTION_SELECTION,
+    NONE
+}

@@ -6,7 +6,24 @@ import java.io.FileOutputStream
 class CloudStorage(accessToken: String) {
     private val dropboxClient: DbxClientV2 = DbxClientV2(DbxRequestConfig(accessToken), accessToken)
 
-    fun requestSubjectsList(year: String, semester: String): List<String> {
+    fun requestAllSubjectsList(): List<String> {
+        val years = dropboxClient.files().listFolder("/Labs").entries
+        val subjects = mutableListOf<String>()
+
+        for (year in years) {
+            val semesters = dropboxClient.files()
+                    .listFolder("/Labs/${year.name}/").entries
+
+            for (semester in semesters) {
+                subjects.addAll(dropboxClient.files()
+                        .listFolder("/Labs/${year.name}/${semester.name}/").entries.map { it.name })
+            }
+        }
+
+        return subjects
+    }
+
+    fun requestSubjectsListForSemester(year: String, semester: String): List<String> {
         return dropboxClient.files()
                 .listFolder("/Labs/$year/$semester/").entries.map { it.name }
     }
