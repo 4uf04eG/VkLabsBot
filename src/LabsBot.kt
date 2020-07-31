@@ -8,9 +8,8 @@ import com.petersamokhin.vksdk.core.model.objects.keyboard
 import com.petersamokhin.vksdk.http.VkOkHttpClient
 import kotlin.concurrent.fixedRateTimer
 
-class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
+class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: CloudStorage) {
     private val client: VkApiClient
-    private val cloudStorage: CloudStorage
 
     private var years: MutableMap<Int, String> = mutableMapOf()
     private var semesters: MutableMap<Int, String> = mutableMapOf()
@@ -19,14 +18,12 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
 
     init {
         val vkHttpClient = VkOkHttpClient()
-
-        this.cloudStorage = cloudStorage
         client = VkApiClient(groupId, accessToken, VkApiClient.Type.Community, VkSettings(vkHttpClient))
 
         initListeners()
-
-        // I haven't found any better way to handle multi-user subject selection.
-        // So I just initialize list of all subjects and update it every hour
+//
+//        // I haven't found any better way to handle multi-user subject selection.
+//        // So I just initialize list of all subjects and update it every hour
         fixedRateTimer(name = "subjects-update",
                 period = 3600000 /* Millisecond in hour */) { initListeners() }
     }
@@ -62,7 +59,8 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     requestSemester(id)
                 }
                 "Первый семестр" -> {
-                    if (handleErrors(id, validateYear = true)) {
+                    if (hasRequestErrors(id,
+                                    validateYear = true)) {
                         return@onMessage
                     }
 
@@ -70,7 +68,8 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     requestListOfSubjects(id)
                 }
                 "Второй семестр" -> {
-                    if (handleErrors(id, validateYear = true)) {
+                    if (hasRequestErrors(id,
+                                    validateYear = true)) {
                         return@onMessage
                     }
 
@@ -78,8 +77,10 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     requestListOfSubjects(id)
                 }
                 "Сгенерировать ссылку" -> {
-                    if (handleErrors(id, validateYear = true,
-                                    validateSemester = true, validateSubject = true)) {
+                    if (hasRequestErrors(id,
+                                    validateYear = true,
+                                    validateSemester = true,
+                                    validateSubject = true)) {
                         return@onMessage
                     }
 
@@ -94,8 +95,10 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     }.execute()
                 }
                 "Сгенерировать zip-архив" -> {
-                    if (handleErrors(id, validateYear = true,
-                                    validateSemester = true, validateSubject = true)) {
+                    if (hasRequestErrors(id,
+                                    validateYear = true,
+                                    validateSemester = true,
+                                    validateSubject = true)) {
                         return@onMessage
                     }
 
@@ -107,14 +110,16 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
                     sendTypingStatus(id)
 
                     cloudStorage.generateZipFile(
-                            years.getOrDefault(id, ""),
-                            semesters.getOrDefault(id, ""),
-                            subjects.getOrDefault(id, ""))
-                    loadAndAttachZipFile(id, subjects.getOrDefault(id, ""))
+                            years[id]!!,
+                            semesters[id]!!,
+                            subjects[id]!!)
+                    loadAndAttachZipFile(id, subjects[id]!!)
                 }
                 "Назад" -> processReturnRequest(id)
                 in converted -> {
-                    if (handleErrors(id, validateYear = true, validateSemester = true)) {
+                    if (hasRequestErrors(id,
+                                    validateYear = true,
+                                    validateSemester = true)) {
                         return@onMessage
                     }
 
@@ -149,25 +154,24 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
     }
 
     private fun sendTypingStatus(id: Int) {
-        client.call("messages.setActivity", paramsOf("type" to "typing", "peer_id" to id), batch = true)
+        client.call("messages.setActivity",
+                paramsOf("type" to "typing", "peer_id" to id), batch = true)
     }
 
-    private fun handleErrors(id: Int,
-                          validateYear: Boolean = false,
-                          validateSemester: Boolean = false,
-                          validateSubject: Boolean = false): Boolean {
+    private fun hasRequestErrors(id: Int,
+                                 validateYear: Boolean = false,
+                                 validateSemester: Boolean = false,
+                                 validateSubject: Boolean = false): Boolean {
         var errors = ""
 
         if (validateYear && years.getOrDefault(id, "").isEmpty()) {
-            errors += "Отсутствует год\n"
+            errors += "Выберите курс\n"
         }
-
         if (validateSemester && semesters.getOrDefault(id, "").isEmpty()) {
-            errors += "Отсутствует семестр\n"
+            errors += "Выберите семестр\n"
         }
-
         if (validateSubject && subjects.getOrDefault(id, "").isEmpty()) {
-            errors += "Отсутствует предмет\n"
+            errors += "Выберите предмет\n"
         }
 
         if (errors.isEmpty()) return false
@@ -192,12 +196,15 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
         }
     }
 
-    private fun initStartMessageResponse(id: Int) {
+    private fun clearUserData(id: Int) {
         years[id] = ""
         semesters[id] = ""
         subjects[id] = ""
         states[id] = State.NONE
+    }
 
+    private fun initStartMessageResponse(id: Int) {
+        clearUserData(id)
         client.sendMessage {
             peerId = id
             message = "Привет! Во время сессии [id87738858|меня] часто просят поделиться моими лабами." +
@@ -235,7 +242,7 @@ class LabsBot(groupId: Int, accessToken: String, cloudStorage: CloudStorage) {
             peerId = id
             message = "Выберите предмет"
             keyboard = keyboard {
-                converted.forEach{ row { primaryButton(label = it) } }
+                converted.forEach { row { primaryButton(label = it) } }
                 row { primaryButton("Назад") }
             }
         }.execute()
