@@ -41,7 +41,7 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
             val id = messageEvent.message.peerId
 
             when (messageEvent.message.text) {
-                "Start" -> initStartMessageResponse(id)
+                "Start", "Начать", "Привет" -> initStartMessageResponse(id)
                 "Первый курс" -> {
                     years[id] = "Первый курс"
                     requestSemester(id)
