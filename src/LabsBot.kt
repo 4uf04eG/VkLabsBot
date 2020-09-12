@@ -11,10 +11,10 @@ import kotlin.concurrent.fixedRateTimer
 class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: CloudStorage) {
     private val client: VkApiClient
 
-    private var years: MutableMap<Int, String> = mutableMapOf()
-    private var semesters: MutableMap<Int, String> = mutableMapOf()
-    private var subjects: MutableMap<Int, String> = mutableMapOf()
-    private var states: MutableMap<Int, State> = mutableMapOf()
+    private val years: MutableMap<Int, String> = mutableMapOf()
+    private val semesters: MutableMap<Int, String> = mutableMapOf()
+    private val subjects: MutableMap<Int, String> = mutableMapOf()
+    private val states: MutableMap<Int, State> = mutableMapOf()
 
     init {
         val vkHttpClient = VkOkHttpClient()
@@ -89,9 +89,9 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
                     client.sendMessage {
                         peerId = id
                         message = "Ссылка на папку: ${cloudStorage.generateFolderLink(
-                                years.getOrDefault(id, ""),
-                                semesters.getOrDefault(id, ""),
-                                subjects.getOrDefault(id, ""))}"
+                                years[id]!!,
+                                semesters[id]!!,
+                                subjects[id]!!)}"
                     }.execute()
                 }
                 "Сгенерировать zip-архив" -> {
