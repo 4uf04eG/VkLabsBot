@@ -1,3 +1,4 @@
+import com.mongodb.client.MongoDatabase
 import com.petersamokhin.vksdk.core.client.VkApiClient
 import com.petersamokhin.vksdk.core.http.paramsOf
 import com.petersamokhin.vksdk.core.io.FileOnDisk
@@ -6,15 +7,17 @@ import com.petersamokhin.vksdk.core.model.objects.Keyboard
 import com.petersamokhin.vksdk.core.model.objects.UploadableContent
 import com.petersamokhin.vksdk.core.model.objects.keyboard
 import com.petersamokhin.vksdk.http.VkOkHttpClient
+import org.litote.kmongo.eq
+import org.litote.kmongo.findOne
+import org.litote.kmongo.getCollection
 import kotlin.concurrent.fixedRateTimer
 
-class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: CloudStorage) {
+class LabsBot(
+    groupId: Int, accessToken: String,
+    private val cloudStorage: CloudStorage,
+    private val database: MongoDatabase
+) {
     private val client: VkApiClient
-
-    private val years: MutableMap<Int, String> = mutableMapOf()
-    private val semesters: MutableMap<Int, String> = mutableMapOf()
-    private val subjects: MutableMap<Int, String> = mutableMapOf()
-    private val states: MutableMap<Int, State> = mutableMapOf()
 
     init {
         val vkHttpClient = VkOkHttpClient()
@@ -24,12 +27,33 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
 //
 //        // I haven't found any better way to handle multi-user subject selection.
 //        // So I just initialize list of all subjects and update it every hour
-        fixedRateTimer(name = "subjects-update",
-                period = 3600000 /* Millisecond in hour */) { initListeners() }
+        fixedRateTimer(
+            name = "subjects-update",
+            period = 3600000 /* Millisecond in hour */
+        ) { initListeners() }
     }
 
     fun startLongPolling() {
         client.startLongPolling()
+    }
+
+    private fun getUser(userId: Int): UserState {
+        val collection = database.getCollection<UserState>()
+        val user = collection.findOne(UserState::userId eq userId) ?: createUser(userId)
+        user.database = collection
+        return user
+    }
+
+    private fun isUserExists(userId: Int): Boolean {
+        val collection = database.getCollection<UserState>()
+        return collection.findOne(UserState::userId eq userId) != null
+    }
+
+    private fun createUser(userId: Int): UserState {
+        val collection = database.getCollection<UserState>()
+        val user = UserState(userId, null, null, null, State.NONE)
+        collection.insertOne(user)
+        return user
     }
 
     private fun initListeners() {
@@ -40,47 +64,61 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
         client.onMessage { messageEvent ->
             val id = messageEvent.message.peerId
 
+            if (!isUserExists(id)) {
+                initStartMessageResponse(id)
+                return@onMessage
+            }
+
             when (messageEvent.message.text) {
                 "Start", "Начать", "Привет" -> initStartMessageResponse(id)
                 "Первый курс" -> {
-                    years[id] = "Первый курс"
+                    getUser(id).year = "Первый курс"
                     requestSemester(id)
                 }
                 "Второй курс" -> {
-                    years[id] = "Второй курс"
+                    getUser(id).year = "Второй курс"
                     requestSemester(id)
                 }
                 "Третий курс" -> {
-                    years[id] = "Третий курс"
+                    getUser(id).year = "Третий курс"
                     requestSemester(id)
                 }
                 "Четвёртый курс" -> {
-                    years[id] = "Четвёртый курс"
+                    getUser(id).year = "Четвёртый курс"
                     requestSemester(id)
                 }
                 "Первый семестр" -> {
-                    if (hasRequestErrors(id,
-                                    validateYear = true)) {
+                    if (hasRequestErrors(
+                            id,
+                            validateYear = true
+                        )
+                    ) {
                         return@onMessage
                     }
 
-                    semesters[id] = "Первый семестр"
+                    getUser(id).semester = "Первый семестр"
                     requestListOfSubjects(id)
                 }
                 "Второй семестр" -> {
-                    if (hasRequestErrors(id,
-                                    validateYear = true)) {
+                    if (hasRequestErrors(
+                            id,
+                            validateYear = true
+                        )
+                    ) {
                         return@onMessage
                     }
 
-                    semesters[id] = "Второй семестр"
+                    getUser(id).semester = "Второй семестр"
                     requestListOfSubjects(id)
                 }
                 "Сгенерировать ссылку" -> {
-                    if (hasRequestErrors(id,
-                                    validateYear = true,
-                                    validateSemester = true,
-                                    validateSubject = true)) {
+                    if (hasRequestErrors(
+                            id,
+                            validateYear = true,
+                            validateSemester = true,
+                            validateSubject = true
+                        )
+                    ) {
                         return@onMessage
                     }
 
@@ -88,17 +126,23 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
 
                     client.sendMessage {
                         peerId = id
-                        message = "Ссылка на папку: ${cloudStorage.generateFolderLink(
-                                years[id]!!,
-                                semesters[id]!!,
-                                subjects[id]!!)}"
+                        message = "Ссылка на папку: ${
+                            cloudStorage.generateFolderLink(
+                                getUser(id).year!!,
+                                getUser(id).semester!!,
+                                getUser(id).subject!!
+                            )
+                        }"
                     }.execute()
                 }
                 "Сгенерировать zip-архив" -> {
-                    if (hasRequestErrors(id,
-                                    validateYear = true,
-                                    validateSemester = true,
-                                    validateSubject = true)) {
+                    if (hasRequestErrors(
+                            id,
+                            validateYear = true,
+                            validateSemester = true,
+                            validateSubject = true
+                        )
+                    ) {
                         return@onMessage
                     }
 
@@ -110,21 +154,25 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
                     sendTypingStatus(id)
 
                     cloudStorage.generateZipFile(
-                            years[id]!!,
-                            semesters[id]!!,
-                            subjects[id]!!)
-                    loadAndAttachZipFile(id, subjects[id]!!)
+                        getUser(id).year!!,
+                        getUser(id).semester!!,
+                        getUser(id).subject!!
+                    )
+                    loadAndAttachZipFile(id, getUser(id).subject!!)
                 }
                 "Назад" -> processReturnRequest(id)
                 in converted -> {
-                    if (hasRequestErrors(id,
-                                    validateYear = true,
-                                    validateSemester = true)) {
+                    if (hasRequestErrors(
+                            id,
+                            validateYear = true,
+                            validateSemester = true
+                        )
+                    ) {
                         return@onMessage
                     }
 
                     val index = converted.indexOf(messageEvent.message.text)
-                    subjects[id] = allSubjects[index]
+                    getUser(id).subject = allSubjects[index]
                     requestAction(id)
                 }
                 else -> client.sendMessage {
@@ -137,7 +185,7 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun processReturnRequest(id: Int) {
-        when (states.getOrDefault(id, State.NONE)) {
+        when (getUser(id).state) {
             State.SEMESTER_SELECTION -> client.sendMessage {
                 peerId = id
                 message = "Выберите курс"
@@ -154,23 +202,27 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun sendTypingStatus(id: Int) {
-        client.call("messages.setActivity",
-                paramsOf("type" to "typing", "peer_id" to id), batch = true)
+        client.call(
+            "messages.setActivity",
+            paramsOf("type" to "typing", "peer_id" to id), batch = true
+        )
     }
 
-    private fun hasRequestErrors(id: Int,
-                                 validateYear: Boolean = false,
-                                 validateSemester: Boolean = false,
-                                 validateSubject: Boolean = false): Boolean {
+    private fun hasRequestErrors(
+        id: Int,
+        validateYear: Boolean = false,
+        validateSemester: Boolean = false,
+        validateSubject: Boolean = false
+    ): Boolean {
         var errors = ""
 
-        if (validateYear && years.getOrDefault(id, "").isEmpty()) {
+        if (validateYear && (getUser(id).year ?: "").isEmpty()) {
             errors += "Выберите курс\n"
         }
-        if (validateSemester && semesters.getOrDefault(id, "").isEmpty()) {
+        if (validateSemester && (getUser(id).semester ?: "").isEmpty()) {
             errors += "Выберите семестр\n"
         }
-        if (validateSubject && subjects.getOrDefault(id, "").isEmpty()) {
+        if (validateSubject && (getUser(id).subject ?: "").isEmpty()) {
             errors += "Выберите предмет\n"
         }
 
@@ -186,7 +238,7 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun requestYearKeyboard(id: Int): Keyboard {
-        states[id] = State.YEAR_SELECTION
+        getUser(id).state = State.YEAR_SELECTION
 
         return keyboard {
             row { primaryButton("Первый курс") }
@@ -197,10 +249,12 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun clearUserData(id: Int) {
-        years[id] = ""
-        semesters[id] = ""
-        subjects[id] = ""
-        states[id] = State.NONE
+        if (isUserExists(id)) {
+            getUser(id).year = null
+            getUser(id).semester = null
+            getUser(id).subject = null
+            getUser(id).state = State.NONE
+        }
     }
 
     private fun initStartMessageResponse(id: Int) {
@@ -217,7 +271,7 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun requestSemester(id: Int) {
-        states[id] = State.SEMESTER_SELECTION
+        getUser(id).state = State.SEMESTER_SELECTION
 
         client.sendMessage {
             peerId = id
@@ -231,11 +285,11 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun requestListOfSubjects(id: Int) {
-        states[id] = State.SUBJECT_SELECTION
+        getUser(id).state = State.SUBJECT_SELECTION
 
         sendTypingStatus(id)
 
-        val subjects = cloudStorage.requestSubjectsListForSemester(years[id]!!, semesters[id]!!)
+        val subjects = cloudStorage.requestSubjectsListForSemester(getUser(id).year!!, getUser(id).semester!!)
         val converted = subjects.map { SubjectNameConverter.convert(it) }
 
         client.sendMessage {
@@ -249,7 +303,7 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
     }
 
     private fun requestAction(id: Int) {
-        states[id] = State.ACTION_SELECTION
+        getUser(id).state = State.ACTION_SELECTION
 
         client.sendMessage {
             peerId = id
@@ -264,17 +318,17 @@ class LabsBot(groupId: Int, accessToken: String, private val cloudStorage: Cloud
 
     private fun loadAndAttachZipFile(id: Int, fileName: String) {
         val attachmentStr = client.uploader().uploadContent(
-                "docs.getMessagesUploadServer",
-                "docs.save",
-                params = paramsOf("type" to "doc", "peer_id" to id),
-                items = listOf(
-                        UploadableContent.File(
-                                fieldName = "file",
-                                fileName = "$fileName.zi",
-                                mediaType = "doc",
-                                file = FileOnDisk("files/${fileName}.zi")
-                        )
+            "docs.getMessagesUploadServer",
+            "docs.save",
+            params = paramsOf("type" to "doc", "peer_id" to id),
+            items = listOf(
+                UploadableContent.File(
+                    fieldName = "file",
+                    fileName = "$fileName.zi",
+                    mediaType = "doc",
+                    file = FileOnDisk("files/${fileName}.zi")
                 )
+            )
         ).let { response: String ->
             val regex = "(doc[\\d_]*)\\?".toRegex()
 
