@@ -9,11 +9,12 @@ class Main {
             val groupId = 197339206
             val vkAccessToken: String = System.getenv("VK_ACCESS_TOKEN")
             val dropboxAccessToken: String = System.getenv("DROPBOX_ACCESS_TOKEN")
+            val mongoDbUri = System.getenv("MONGODB_URI") ?: "mongodb://localhost/main"
 
             Files.createDirectories(Paths.get("files"))
 
             val storage = CloudStorage(dropboxAccessToken)
-            val database = KMongo.createClient().getDatabase("main")
+            val database = KMongo.createClient(connectionString = mongoDbUri).getDatabase("main")
             val bot = LabsBot(groupId, vkAccessToken, storage, database)
 
             bot.startLongPolling()
